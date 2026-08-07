@@ -1,0 +1,11 @@
+name: demographics-service
+port: 8101
+lang: python
+description: "demographics-service \u2014 domain: patients"
+http_deps:
+- patients-service
+- audit-log-service
+publishes:
+- audit.event
+subscribes:
+- patient.updated
