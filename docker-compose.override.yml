@@ -1,7 +1,7 @@
 services:
   demographics-service:
     build: .
-    container_name: ${NAME_UNDERSCORE}
+    container_name: demographics_service
     depends_on:
       postgres:
         condition: service_healthy
