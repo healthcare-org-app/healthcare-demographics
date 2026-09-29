@@ -16,6 +16,8 @@ demographics-service — domain: patients
 | GET       | `/api/demographics/<id>`      |
 | PUT/PATCH | `/api/demographics/<id>`      |
 | DELETE    | `/api/demographics/<id>`      |
+| POST      | `/api/demographics/validate-address` |
+| POST      | `/api/demographics/filter-text` |
 | GET       | `/health`                  |
 | GET       | `/ready`                   |
 

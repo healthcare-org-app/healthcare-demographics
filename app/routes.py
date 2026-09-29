@@ -17,6 +17,7 @@ from healthcare_common.auth import require_auth
 from healthcare_common.http import ServiceUnavailable, json_or_raise
 
 from .census_geocoder import GeocoderUnavailable, geocode_address
+from .purgomalum import ProfanityFilterUnavailable, filter_text
 
 
 TABLE = "demographics"
@@ -171,5 +172,34 @@ def build_blueprint(svc) -> Blueprint:
             "latitude": best["latitude"],
             "longitude": best["longitude"],
         })
+
+    # ── shared profanity filter (PurgoMalum) ──────────
+    # Other services can call this before persisting free-text fields (e.g.
+    # notes, names) so profanity filtering stays consistent estate-wide
+    # instead of each service reinventing it — same pattern as
+    # validate-address above.
+
+    @bp.post("/filter-text")
+    @require_auth(scopes=[f"{RESOURCE}.read"])
+    def filter_text_route():
+        payload = request.get_json(silent=True) or {}
+        text = (payload.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "'text' is required"}), 400
+
+        try:
+            filtered = filter_text(
+                text,
+                add=payload.get("add"),
+                fill_text=payload.get("fill_text"),
+                fill_char=payload.get("fill_char"),
+            )
+        except ProfanityFilterUnavailable as e:
+            return jsonify({"error": f"profanity_filter_unavailable: {e}"}), 502
+
+        emit_audit(bus, action=f"{RESOURCE}.filter_text", actor=_actor(),
+                   details={"changed": filtered != text})
+
+        return jsonify({"text": text, "filtered": filtered, "changed": filtered != text})
 
     return bp
