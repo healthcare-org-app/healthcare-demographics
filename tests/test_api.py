@@ -1,4 +1,5 @@
 from app.routes import RESOURCE
+from app.census_geocoder import GeocoderUnavailable
 
 
 def test_crud(client, svc):
@@ -30,3 +31,37 @@ def test_audit_emitted_on_create(client, svc):
     client.post(f"/api/{RESOURCE}/", json={"name": "audit-me"})
     topics = [t for t, _, _ in svc.bus.published]
     assert "audit.event" in topics
+
+
+def test_validate_address_match(client, monkeypatch):
+    monkeypatch.setattr("app.routes.geocode_address", lambda *a, **kw: [
+        {"matched_address": "4600 SILVER HILL RD, WASHINGTON, DC, 20233",
+         "latitude": 38.845, "longitude": -76.928, "city": "WASHINGTON", "state": "DC", "zip": "20233"},
+    ])
+    r = client.post(f"/api/{RESOURCE}/validate-address", json={"address": "4600 Silver Hill Rd, Washington, DC 20233"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["valid"] is True
+    assert body["latitude"] == 38.845
+
+
+def test_validate_address_no_match(client, monkeypatch):
+    monkeypatch.setattr("app.routes.geocode_address", lambda *a, **kw: [])
+    r = client.post(f"/api/{RESOURCE}/validate-address", json={"address": "not a real place"})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["valid"] is False
+    assert body["latitude"] is None
+
+
+def test_validate_address_missing_field(client):
+    r = client.post(f"/api/{RESOURCE}/validate-address", json={})
+    assert r.status_code == 400
+
+
+def test_validate_address_geocoder_down(client, monkeypatch):
+    def _boom(*a, **kw):
+        raise GeocoderUnavailable("network down")
+    monkeypatch.setattr("app.routes.geocode_address", _boom)
+    r = client.post(f"/api/{RESOURCE}/validate-address", json={"address": "123 Main St"})
+    assert r.status_code == 502

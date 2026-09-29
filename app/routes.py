@@ -16,6 +16,8 @@ from healthcare_common.audit import emit_audit
 from healthcare_common.auth import require_auth
 from healthcare_common.http import ServiceUnavailable, json_or_raise
 
+from .census_geocoder import GeocoderUnavailable, geocode_address
+
 
 TABLE = "demographics"
 RESOURCE = "demographics"
@@ -132,6 +134,42 @@ def build_blueprint(svc) -> Blueprint:
                    target=f"{RESOURCE}:{record_id}")
         return jsonify({"deactivated": record_id})
 
+    # ── shared address validation (US Census Geocoder) ──────────
+    # Other services (patients-service, providers-service,
+    # facilities-service) call this synchronously on create/update when
+    # their payload includes an `address`, so validated/geocoded results
+    # stay consistent estate-wide instead of each service reinventing it.
 
+    @bp.post("/validate-address")
+    @require_auth(scopes=[f"{RESOURCE}.read"])
+    def validate_address():
+        payload = request.get_json(silent=True) or {}
+        address = (payload.get("address") or "").strip()
+        if not address:
+            return jsonify({"error": "'address' is required"}), 400
+
+        try:
+            matches = geocode_address(
+                address,
+                payload.get("city"),
+                payload.get("state"),
+                payload.get("zip"),
+            )
+        except GeocoderUnavailable as e:
+            return jsonify({"error": f"geocoder_unavailable: {e}"}), 502
+
+        emit_audit(bus, action=f"{RESOURCE}.validate_address", actor=_actor(),
+                   details={"matched": len(matches) > 0})
+
+        if not matches:
+            return jsonify({"valid": False, "matched_address": None,
+                             "latitude": None, "longitude": None})
+        best = matches[0]
+        return jsonify({
+            "valid": True,
+            "matched_address": best["matched_address"],
+            "latitude": best["latitude"],
+            "longitude": best["longitude"],
+        })
 
     return bp
