@@ -6,10 +6,16 @@ frontend/api/_lib/purgomalum.ts.
 """
 from __future__ import annotations
 
+import os
+
 import requests
 
-BASE_URL = "https://www.purgomalum.com/service/json"
+DEFAULT_BASE_URL = "https://www.purgomalum.com/service/json"
 TIMEOUT = 5.0
+
+
+def _base_url() -> str:
+    return os.environ.get("PURGOMALUM_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
 
 
 class ProfanityFilterUnavailable(RuntimeError):
@@ -36,7 +42,7 @@ def filter_text(
         params["fill_char"] = fill_char
 
     try:
-        resp = requests.get(BASE_URL, params=params, timeout=TIMEOUT)
+        resp = requests.get(_base_url(), params=params, timeout=TIMEOUT)
     except requests.RequestException as e:
         raise ProfanityFilterUnavailable(str(e)) from e
 
